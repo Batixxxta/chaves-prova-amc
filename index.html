@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chaves de Prova — AMC MCQ</title>
+<style>
+  html,body{height:100%;margin:0;background:#000;overflow:hidden}
+  #mapa{position:fixed;inset:0}
+</style>
+</head>
+<body>
+<!-- CASCA FINA: o mapa inteiro mora em mapa.js (motor em Canvas, 16/11/2026) e e o MESMO
+     motor que roda dentro do estudo-amc, na aba "Chaves de prova". Nao ponha logica aqui. -->
+<div id="mapa"></div>
+<script src="chaves.js"></script>
+<script src="mapa.js"></script>
+<script>
+(function(){
+  "use strict";
+  var mapa = window.criarMapa(document.getElementById('mapa'), {});
+  if (!mapa) return;
+  window.MAPA = mapa;
+  function lerHash(){
+    var m = /(?:^|[#&])q=([^&]+)/.exec(location.hash || '');
+    if (!m) return false;
+    // decodeURIComponent ESTOURA URIError com hash malformado (Ana Bot, 16/11): link torto
+    // tem que virar "sem destaque", nunca tela preta.
+    var id;
+    try { id = decodeURIComponent(m[1]); } catch (e) { id = m[1]; }
+    return mapa.abrirQuestao(id);
+  }
+  window.addEventListener('hashchange', function(){ if (!lerHash()) mapa.limparAlvos(); });
+  lerHash();
+})();
+</script>
+</body>
+</html>
