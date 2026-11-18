@@ -31,6 +31,13 @@
   var TAM = [21, 17, 15, 13.5];
   var PESO = ['700', '600', '500', '400'];
   var FAMILIA = '"Segoe UI","Segoe UI Emoji",system-ui,-apple-system,sans-serif';
+  // CALOR (pedido dele 18/11): tema que caiu mais vezes ganha cor quente
+  var CALOR = [[10, '#e03131', '10x ou mais'], [5, '#ff6b1a', '5 a 9x'], [3, '#ffa94d', '3 a 4x'], [2, '#ffe066', '2x']];
+  function corCalor(n) {
+    if (!n.freq) return null;
+    for (var i = 0; i < CALOR.length; i++) if (n.freq >= CALOR[i][0]) return CALOR[i][1];
+    return null;
+  }
   var COR_FOCO = '#ffffff', COR_ALVO = '#ff5470', COR_LINHA = '#333333';
   var TAM_CONT = 11;
   var LOD_PX = 5;            // rotulo menor que isso na tela nao e desenhado
@@ -77,6 +84,10 @@
     + '.mp-bussola{position:absolute;top:12px;right:12px;z-index:13;display:none;width:46px;height:46px;border-radius:50%;'
     + 'border:1px solid #444;background:rgba(20,20,20,.92);font-size:24px;cursor:pointer;padding:0}'
     + '.mp-bussola.on{display:block}'
+    + '.mp-legenda{position:absolute;top:12px;left:12px;z-index:11;font-size:12px;color:#aaa;background:rgba(10,10,10,.85);'
+    + 'border:1px solid #2a2a2a;border-radius:10px;padding:6px 10px;pointer-events:none;max-width:calc(100% - 90px)}'
+    + '.mp-legenda span{display:inline-block;margin-left:8px;white-space:nowrap}'
+    + '.mp-legenda i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px}'
     // CELULAR (pedido dele 18/11): painel vira folha de baixo, rodape curto, ajuda rola
     + '@media (max-width:700px){'
     + '.mp-painel{left:8px;right:8px;bottom:8px;width:auto;max-height:46%;padding:12px 14px}'
@@ -92,6 +103,8 @@
     + '<canvas class="mp-palco"></canvas>'
     + '<div class="mp-rodape"><span class="pc">? atalhos · clique abre o ramo · arraste move · roda/W/S zoom · / busca · ◌ anel = escrita pela Mari</span>'
     + '<span class="cel">toque abre o ramo · arraste move · dois dedos = zoom e giro · ◌ = escrita pela Mari</span></div>'
+    + '<div class="mp-legenda">🔥 caiu: ' + CALOR.slice().reverse().map(function (c) {
+        return '<span><i style="background:' + c[1] + '"></i>' + c[2] + '</span>'; }).join('') + '</div>'
     + '<button class="mp-bussola" title="endireitar o mapa">🧭</button>'
     + '<div class="mp-painel"></div>'
     + '<div class="mp-busca"><input placeholder="buscar chave..." autocomplete="off"><div class="mp-achados"></div></div>'
@@ -147,6 +160,10 @@
       bussola.style.transform = 'rotate(' + giro + 'rad)';
     }
     if (bussola) bussola.addEventListener('click', endireitar);
+    // Safari do iPhone tem gesto proprio de pinca/giro da PAGINA: aqui dentro quem manda e o mapa
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (t) {
+      el.addEventListener(t, function (e) { e.preventDefault(); }, {passive: false});
+    });
     var busca = el.querySelector('.mp-busca'), campo = busca.querySelector('input');
     var achados = el.querySelector('.mp-achados'), ajuda = el.querySelector('.mp-ajuda');
 
@@ -162,8 +179,8 @@
     var porId = Object.create(null), raiz = null, todosNos = [];
     DADOS.forEach(function (n) {
       var no = {id: n.id, texto: n.texto, nivel: n.nivel, pai: n.pai, q: (n.q || []).slice(),
-                autor: n.autor || null, filhos: [], aberto: false,
-                rotulo: (n.emoji ? n.emoji + ' ' : '') + n.texto,
+                autor: n.autor || null, filhos: [], aberto: false, freq: n.freq || 0,
+                rotulo: (n.emoji ? n.emoji + ' ' : '') + n.texto + (n.freq >= 2 ? '  🔥' + n.freq + 'x' : ''),
                 w: -1, wb: -1, wc: 0, x: 0, y: 0, ang: 0, r: 0, totalFolhas: 1, _folhasVis: 1};
       no.busca = semAcento(n.texto.toLowerCase());
       porId[n.id] = no; todosNos.push(no);
@@ -355,22 +372,32 @@
         }
         if (!naTela.length) continue;
         por(s, 0, 0, s, ox, oy);
-        ctx.strokeStyle = cor; ctx.lineWidth = 2;
-        for (var passo = 0; passo < 2; passo++) {     // 0 = fechados com filhos (cheios), 1 = o resto (ocos)
-          ctx.beginPath();
-          for (i = 0; i < naTela.length; i++) {
-            n = naTela[i];
-            var cheio = n.filhos.length && !n.aberto;
-            if ((passo === 0) !== !!cheio) continue;
-            var rb = raioBolha(n);
-            ctx.moveTo(n.x + rb, n.y); ctx.arc(n.x, n.y, rb, 0, 6.2832);
+        ctx.lineWidth = 2;
+        // um lote por COR (a do nivel + as do calor): continua poucos fills por quadro
+        var porCor = {};
+        for (i = 0; i < naTela.length; i++) {
+          var ck = corCalor(naTela[i]) || cor;
+          (porCor[ck] || (porCor[ck] = [])).push(naTela[i]);
+        }
+        for (var ck2 in porCor) {
+          var grupo = porCor[ck2];
+          ctx.strokeStyle = ck2;
+          for (var passo = 0; passo < 2; passo++) {     // 0 = fechados com filhos (cheios), 1 = o resto (ocos)
+            ctx.beginPath();
+            for (i = 0; i < grupo.length; i++) {
+              n = grupo[i];
+              var cheio = n.filhos.length && !n.aberto;
+              if ((passo === 0) !== !!cheio) continue;
+              var rb = raioBolha(n);
+              ctx.moveTo(n.x + rb, n.y); ctx.arc(n.x, n.y, rb, 0, 6.2832);
+            }
+            ctx.fillStyle = passo === 0 ? ck2 : '#000';
+            ctx.fill(); ctx.stroke();
           }
-          ctx.fillStyle = passo === 0 ? cor : '#000';
-          ctx.fill(); ctx.stroke();
         }
         if (comTexto) {
           ctx.font = fonte(nv, false);
-          for (i = 0; i < naTela.length; i++) rotulo(naTela[i], cor, s, ox, oy);
+          for (i = 0; i < naTela.length; i++) rotulo(naTela[i], corCalor(naTela[i]) || cor, s, ox, oy);
         }
       }
       if (aneis.length && 4 * escala >= 1.2) {
