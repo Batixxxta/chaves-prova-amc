@@ -84,6 +84,10 @@
     + '.mp-bussola{position:absolute;top:12px;right:12px;z-index:13;display:none;width:46px;height:46px;border-radius:50%;'
     + 'border:1px solid #444;background:rgba(20,20,20,.92);font-size:24px;cursor:pointer;padding:0}'
     + '.mp-bussola.on{display:block}'
+    + '.mp-gira{position:absolute;top:66px;right:12px;z-index:13;display:flex;flex-direction:column;gap:8px}'
+    + '.mp-gira button{width:46px;height:46px;border-radius:50%;border:1px solid #444;background:rgba(20,20,20,.92);'
+    + 'color:#ddd;font-size:22px;cursor:pointer;padding:0}.mp-gira button:hover{color:#fff;border-color:#888}'
+    + '@media (max-width:700px){.mp-gira{display:none}}'
     + '.mp-legenda{position:absolute;top:12px;left:12px;z-index:11;font-size:12px;color:#aaa;background:rgba(10,10,10,.85);'
     + 'border:1px solid #2a2a2a;border-radius:10px;padding:6px 10px;pointer-events:none;max-width:calc(100% - 90px)}'
     + '.mp-legenda span{display:inline-block;margin-left:8px;white-space:nowrap}'
@@ -101,16 +105,19 @@
 
   var HTML = ''
     + '<canvas class="mp-palco"></canvas>'
-    + '<div class="mp-rodape"><span class="pc">? atalhos · clique abre o ramo · arraste move · roda/W/S zoom · / busca · ◌ anel = escrita pela Mari</span>'
+    + '<div class="mp-rodape"><span class="pc">? atalhos · clique abre o ramo · arraste move · roda/W/S zoom · A/D gira · / busca · ◌ anel = escrita pela Mari</span>'
     + '<span class="cel">toque abre o ramo · arraste move · dois dedos = zoom e giro · ◌ = escrita pela Mari</span></div>'
     + '<div class="mp-legenda">🔥 caiu: ' + CALOR.slice().reverse().map(function (c) {
         return '<span><i style="background:' + c[1] + '"></i>' + c[2] + '</span>'; }).join('') + '</div>'
+    + '<div class="mp-gira"><button data-g="-1" title="girar para a esquerda (A)">↺</button>'
+    + '<button data-g="1" title="girar para a direita (D)">↻</button></div>'
     + '<button class="mp-bussola" title="endireitar o mapa">🧭</button>'
     + '<div class="mp-painel"></div>'
     + '<div class="mp-busca"><input placeholder="buscar chave..." autocomplete="off"><div class="mp-achados"></div></div>'
     + '<div class="mp-ajuda"><div class="caixa"><h2>Atalhos</h2><table>'
     + '<tr><td>setas</td><td>mover a visão</td></tr>'
     + '<tr><td>W / S</td><td>aproximar / afastar</td></tr>'
+    + '<tr><td>A / D</td><td>girar o mapa (ou Shift + roda; 🧭 endireita)</td></tr>'
     + '<tr><td>roda do mouse</td><td>zoom no ponteiro</td></tr>'
     + '<tr><td>clique / Espaço</td><td>expandir ou colapsar o ramo</td></tr>'
     + '<tr><td>Tab / Shift+Tab</td><td>próximo / anterior irmão</td></tr>'
@@ -160,6 +167,20 @@
       bussola.style.transform = 'rotate(' + giro + 'rad)';
     }
     if (bussola) bussola.addEventListener('click', endireitar);
+    // girar em torno do centro da tela (teclas A/D, botoes, Shift + roda)
+    function girarVista(d) {
+      giro = Math.atan2(Math.sin(giro + d), Math.cos(giro + d));
+      if (Math.abs(giro) < 0.01) giro = 0;
+      atualizarBussola(); pedir();
+    }
+    // setas movem na direcao da TELA, mesmo com o mapa girado
+    function mover(dx, dy) {
+      var c = Math.cos(-giro), sn = Math.sin(-giro);
+      deslocX += dx * c - dy * sn; deslocY += dx * sn + dy * c; pedir();
+    }
+    el.querySelectorAll('.mp-gira button').forEach(function (b) {
+      b.addEventListener('click', function () { girarVista(Number(b.getAttribute('data-g')) * Math.PI / 12); });
+    });
     // Safari do iPhone tem gesto proprio de pinca/giro da PAGINA: aqui dentro quem manda e o mapa
     ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (t) {
       el.addEventListener(t, function (e) { e.preventDefault(); }, {passive: false});
@@ -581,6 +602,7 @@
 
     canvas.addEventListener('wheel', function (e) {
       e.preventDefault();
+      if (e.shiftKey) { girarVista((e.deltaY || e.deltaX) * 0.003); return; }
       var p = posCanvas(e);
       zoomEm(p.x, p.y, Math.exp(-e.deltaY * 0.0015));
     }, {passive: false});
@@ -757,10 +779,12 @@
       if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
       var passo = 70;
       switch (e.key) {
-        case 'ArrowUp': deslocY += passo; pedir(); e.preventDefault(); break;
-        case 'ArrowDown': deslocY -= passo; pedir(); e.preventDefault(); break;
-        case 'ArrowLeft': deslocX += passo; pedir(); e.preventDefault(); break;
-        case 'ArrowRight': deslocX -= passo; pedir(); e.preventDefault(); break;
+        case 'ArrowUp': mover(0, passo); e.preventDefault(); break;
+        case 'ArrowDown': mover(0, -passo); e.preventDefault(); break;
+        case 'ArrowLeft': mover(passo, 0); e.preventDefault(); break;
+        case 'ArrowRight': mover(-passo, 0); e.preventDefault(); break;
+        case 'a': case 'A': girarVista(-Math.PI / 12); break;      // giro no PC (pedido dele 18/11)
+        case 'd': case 'D': girarVista(Math.PI / 12); break;
         case 'w': case 'W': zoomEm(largUtil() / 2, ALT / 2, 1.18); break;
         case 's': case 'S': zoomEm(largUtil() / 2, ALT / 2, 1 / 1.18); break;
         case ' ':
