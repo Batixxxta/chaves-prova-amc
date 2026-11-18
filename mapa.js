@@ -74,6 +74,9 @@
     + '.mp-achados div.sel{background:#1e1e1e;color:#fff}'
     + '.mp-achados small{color:#777;margin-left:8px}'
     + '.mp-rodape .cel{display:none}'
+    + '.mp-bussola{position:absolute;top:12px;right:12px;z-index:13;display:none;width:46px;height:46px;border-radius:50%;'
+    + 'border:1px solid #444;background:rgba(20,20,20,.92);font-size:24px;cursor:pointer;padding:0}'
+    + '.mp-bussola.on{display:block}'
     // CELULAR (pedido dele 18/11): painel vira folha de baixo, rodape curto, ajuda rola
     + '@media (max-width:700px){'
     + '.mp-painel{left:8px;right:8px;bottom:8px;width:auto;max-height:46%;padding:12px 14px}'
@@ -88,7 +91,8 @@
   var HTML = ''
     + '<canvas class="mp-palco"></canvas>'
     + '<div class="mp-rodape"><span class="pc">? atalhos · clique abre o ramo · arraste move · roda/W/S zoom · / busca · ◌ anel = escrita pela Mari</span>'
-    + '<span class="cel">toque abre o ramo · arraste move · pinça com dois dedos = zoom · ◌ = escrita pela Mari</span></div>'
+    + '<span class="cel">toque abre o ramo · arraste move · dois dedos = zoom e giro · ◌ = escrita pela Mari</span></div>'
+    + '<button class="mp-bussola" title="endireitar o mapa">🧭</button>'
     + '<div class="mp-painel"></div>'
     + '<div class="mp-busca"><input placeholder="buscar chave..." autocomplete="off"><div class="mp-achados"></div></div>'
     + '<div class="mp-ajuda"><div class="caixa"><h2>Atalhos</h2><table>'
@@ -129,6 +133,20 @@
     el.innerHTML = HTML;
     var canvas = el.querySelector('.mp-palco'), ctx = canvas.getContext('2d');
     var rodape = el.querySelector('.mp-rodape'), painel = el.querySelector('.mp-painel');
+    var bussola = el.querySelector('.mp-bussola');
+    // endireitar mantendo o centro da tela no mesmo ponto do mapa
+    function endireitar() {
+      if (!giro) return;
+      var u = desgirar(LARG / 2, ALT / 2); giro = 0;
+      deslocX += LARG / 2 - u.x; deslocY += ALT / 2 - u.y;
+      atualizarBussola(); pedir();
+    }
+    function atualizarBussola() {
+      if (!bussola) return;
+      bussola.classList.toggle('on', !!giro);
+      bussola.style.transform = 'rotate(' + giro + 'rad)';
+    }
+    if (bussola) bussola.addEventListener('click', endireitar);
     var busca = el.querySelector('.mp-busca'), campo = busca.querySelector('input');
     var achados = el.querySelector('.mp-achados'), ajuda = el.querySelector('.mp-ajuda');
 
@@ -160,7 +178,7 @@
       n.totalFolhas = t; return t;
     })(raiz);
 
-    var escala = 1, deslocX = 0, deslocY = 0, focado = raiz, alvos = {};
+    var giro = 0, escala = 1, deslocX = 0, deslocY = 0, focado = raiz, alvos = {};
     var vis = [], porNivel = [[], [], [], []];
     var larguraNivel = [0, 0, 0, 0];
     var LARG = 0, ALT = 0, DPR = 1;
@@ -267,6 +285,19 @@
       sujo = true;
       requestAnimationFrame(function () { sujo = false; desenhar(); });
     }
+    // GIRO (pedido dele 18/11, dois dedos torcendo): a tela inteira gira em torno do centro.
+    // Toda a logica antiga (zoom, clique, arrasto) continua em coordenadas "desgiradas".
+    function por(a, b, c, d, e, f) {
+      if (!giro) { ctx.setTransform(a, b, c, d, e, f); return; }
+      var co = Math.cos(giro), si = Math.sin(giro), mx = DPR * LARG / 2, my = DPR * ALT / 2;
+      ctx.setTransform(co, si, -si, co, mx - co * mx + si * my, my - si * mx - co * my);
+      ctx.transform(a, b, c, d, e, f);
+    }
+    function desgirar(x, y) {           // ponto da tela -> ponto sem giro
+      if (!giro) return {x: x, y: y};
+      var co = Math.cos(-giro), si = Math.sin(-giro), mx = LARG / 2, my = ALT / 2, dx = x - mx, dy = y - my;
+      return {x: mx + dx * co - dy * si, y: my + dx * si + dy * co};
+    }
     function desenhar() {
       ajustarTamanho();
       if (!LARG || !ALT) return;       // escondido (aba de questoes na frente): nao gasta nada
@@ -278,10 +309,15 @@
       // janela visivel em coordenadas do mapa
       var vx0 = -deslocX / escala, vy0 = -deslocY / escala;
       var vx1 = (LARG - deslocX) / escala, vy1 = (ALT - deslocY) / escala;
+      if (giro) {                        // girado: a janela vira o circulo que cobre a tela
+        var raio = Math.hypot(LARG, ALT) / 2;
+        vx0 = (LARG / 2 - raio - deslocX) / escala; vx1 = (LARG / 2 + raio - deslocX) / escala;
+        vy0 = (ALT / 2 - raio - deslocY) / escala;  vy1 = (ALT / 2 + raio - deslocY) / escala;
+      }
       var i, n, f, k;
 
       // ligacoes: um caminho so, um stroke so
-      ctx.setTransform(s, 0, 0, s, ox, oy);
+      por(s, 0, 0, s, ox, oy);
       ctx.strokeStyle = COR_LINHA; ctx.lineWidth = Math.max(1.5, 1 / escala);
       ctx.beginPath();
       for (i = 0; i < vis.length; i++) {
@@ -318,7 +354,7 @@
           if (n.autor === 'mari') aneis.push(n);
         }
         if (!naTela.length) continue;
-        ctx.setTransform(s, 0, 0, s, ox, oy);
+        por(s, 0, 0, s, ox, oy);
         ctx.strokeStyle = cor; ctx.lineWidth = 2;
         for (var passo = 0; passo < 2; passo++) {     // 0 = fechados com filhos (cheios), 1 = o resto (ocos)
           ctx.beginPath();
@@ -338,7 +374,7 @@
         }
       }
       if (aneis.length && 4 * escala >= 1.2) {
-        ctx.setTransform(s, 0, 0, s, ox, oy);
+        por(s, 0, 0, s, ox, oy);
         ctx.beginPath();
         for (i = 0; i < aneis.length; i++) {
           n = aneis[i]; var ra = raioBolha(n) + 4.5;
@@ -372,11 +408,11 @@
     }
     function girar(n, giro, s, ox, oy) {
       var c = Math.cos(giro) * s, se = Math.sin(giro) * s;
-      ctx.setTransform(c, se, -se, c, n.x * s + ox, n.y * s + oy);
+      por(c, se, -se, c, n.x * s + ox, n.y * s + oy);
     }
     function bolha(n, corFundo, corBorda, s, ox, oy, forte) {
       var r = raioBolha(n);
-      ctx.setTransform(s, 0, 0, s, n.x * s + ox, n.y * s + oy);
+      por(s, 0, 0, s, n.x * s + ox, n.y * s + oy);
       if (n.autor === 'mari') {
         ctx.beginPath(); ctx.arc(0, 0, r + 4.5, 0, 6.2832);
         ctx.setLineDash([2.5, 2.5]); ctx.strokeStyle = 'rgba(255,209,102,.85)'; ctx.lineWidth = 1.4;
@@ -419,7 +455,7 @@
     }
     function posCanvas(e) {
       var r = canvas.getBoundingClientRect();
-      return {x: e.clientX - r.left, y: e.clientY - r.top};
+      return desgirar(e.clientX - r.left, e.clientY - r.top);
     }
 
     var LIMIAR = 5, arrastando = false, houveArrasto = false, ultX = 0, ultY = 0, iniX = 0, iniY = 0;
@@ -428,7 +464,8 @@
     function distDedos() {
       var k = Object.keys(dedos); if (k.length < 2) return null;
       var a = dedos[k[0]], b = dedos[k[1]];
-      return {d: Math.hypot(a.x - b.x, a.y - b.y) || 1, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2};
+      return {d: Math.hypot(a.x - b.x, a.y - b.y) || 1, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2,
+              ang: Math.atan2(b.y - a.y, b.x - a.x)};
     }
     canvas.addEventListener('pointerdown', function (e) {
       if (e.button !== 0) return;
@@ -450,9 +487,16 @@
         if (pinca) {
           var agora = distDedos();
           if (agora) {
-            deslocX += agora.cx - pinca.cx; deslocY += agora.cy - pinca.cy;
-            zoomEm(agora.cx, agora.cy, agora.d / pinca.d);
-            pinca = agora;
+            // o ponto do mapa embaixo dos dedos acompanha os dedos: move, aproxima e gira junto
+            var u0 = desgirar(pinca.cx, pinca.cy);
+            var wx = (u0.x - deslocX) / escala, wy = (u0.y - deslocY) / escala;
+            var dAng = agora.ang - pinca.ang;
+            if (dAng > Math.PI) dAng -= 2 * Math.PI; else if (dAng < -Math.PI) dAng += 2 * Math.PI;
+            giro += dAng;
+            escala = Math.min(ESC_MAX, Math.max(ESC_MIN, escala * agora.d / pinca.d));
+            var u1 = desgirar(agora.cx, agora.cy);
+            deslocX = u1.x - wx * escala; deslocY = u1.y - wy * escala;
+            pinca = agora; atualizarBussola(); pedir();
           }
           return;
         }
@@ -463,14 +507,22 @@
         return;
       }
       if (Math.abs(e.clientX - iniX) > LIMIAR || Math.abs(e.clientY - iniY) > LIMIAR) houveArrasto = true;
-      deslocX += e.clientX - ultX; deslocY += e.clientY - ultY;
+      var ddx = e.clientX - ultX, ddy = e.clientY - ultY;
+      if (giro) { var gc = Math.cos(-giro), gs = Math.sin(-giro), t = ddx * gc - ddy * gs; ddy = ddx * gs + ddy * gc; ddx = t; }
+      deslocX += ddx; deslocY += ddy;
       ultX = e.clientX; ultY = e.clientY; pedir();
     });
     function soltar(e) {
       if (dedos[e.pointerId]) {
         delete dedos[e.pointerId];
         if (pinca) {
-          if (Object.keys(dedos).length < 2) pinca = null;
+          if (Object.keys(dedos).length < 2) {
+            pinca = null;
+            // quase reto (menos de 4 graus) volta pro reto: evita mapa torto sem querer
+            var g = Math.atan2(Math.sin(giro), Math.cos(giro));
+            if (Math.abs(g) < 0.07) endireitar(); else giro = g;
+            atualizarBussola();
+          }
           // o dedo que sobrou continua arrastando de onde esta, sem pulo
           var k = Object.keys(dedos);
           if (k.length === 1) { var r2 = canvas.getBoundingClientRect(); ultX = dedos[k[0]].x + r2.left; ultY = dedos[k[0]].y + r2.top; }
@@ -689,7 +741,7 @@
           if (focado.filhos.length) { focado.aberto = !focado.aberto; redesenhar(); }
           break;
         case 'f': case 'F': enquadrar(); break;
-        case 'r': case 'R': escala = 1; focado = raiz; alvos = {}; calcular(); mostrarPainel(); centralizar(raiz); break;
+        case 'r': case 'R': endireitar(); escala = 1; focado = raiz; alvos = {}; calcular(); mostrarPainel(); centralizar(raiz); break;
         case 'e': case 'E': todosNos.forEach(function (n) { n.aberto = true; }); calcular(); mostrarPainel(); enquadrar(); break;
         case 'c': case 'C':
           todosNos.forEach(function (n) { n.aberto = false; }); raiz.aberto = true; focado = raiz;
